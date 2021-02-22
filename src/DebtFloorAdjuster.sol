@@ -29,6 +29,8 @@ contract DebtFloorAdjuster is IncreasingTreasuryReimbursement {
     OracleRelayerLike             public oracleRelayer;
     SAFEEngineLike                public safeEngine;
 
+    uint256                       public constant WAD_COMPLEMENT = 10 ** 9;
+
     // --- Events ---
     event ModifyParameters(bytes32 parameter, bytes32 collateralType, uint256 value);
     event AddFloorData(bytes32 collateralType, uint256 updateDelay, uint256 targetValue);
@@ -65,6 +67,7 @@ contract DebtFloorAdjuster is IncreasingTreasuryReimbursement {
           newFloor.updateDelay = val;
         }
         else if (parameter == "targetValue") {
+          require(val >= WAD_COMPLEMENT, "DebtFloorAdjuster/tiny-target-value");
           newFloor.targetValue = val;
         }
         else revert("DebtFloorAdjuster/modify-unrecognized-param");
@@ -77,7 +80,7 @@ contract DebtFloorAdjuster is IncreasingTreasuryReimbursement {
 
         // Check that values are not null
         require(updateDelay > 0, "DebtFloorAdjuster/null-update-delay");
-        require(targetValue > 0, "DebtFloorAdjuster/null-target-value");
+        require(targetValue >= WAD_COMPLEMENT, "DebtFloorAdjuster/tiny-target-value");
 
         // Update floor data
         newFloor.lastUpdateTime = now;
