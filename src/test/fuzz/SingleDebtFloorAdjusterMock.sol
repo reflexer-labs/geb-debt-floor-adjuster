@@ -1,6 +1,6 @@
 pragma solidity 0.6.7;
 
-import "geb-treasury-reimbursement/reimbursement/IncreasingTreasuryReimbursement.sol";
+import "./IncreasingTreasuryReimbursementMock.sol";
 
 abstract contract SAFEEngineLike {
     function modifyParameters(
@@ -12,7 +12,8 @@ abstract contract SAFEEngineLike {
         uint256 debtAmount,        // [wad]
         uint256 accumulatedRate,   // [ray]
         uint256 safetyPrice,       // [ray]
-        uint256 debtCeiling        // [rad]
+        uint256 debtCeiling,       // [rad]
+        uint256 debtFloor          // [rad]
     );
 }
 abstract contract OracleRelayerLike {
@@ -22,7 +23,7 @@ abstract contract OracleLike {
     function read() virtual external view returns (uint256);
 }
 
-contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
+contract SingleDebtFloorAdjusterMock is IncreasingTreasuryReimbursementMock {
     // --- Auth ---
     // Mapping of addresses that are allowed to manually recompute the debt floor (without being rewarded for it)
     mapping (address => uint256) public manualSetters;
@@ -94,7 +95,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
       uint256 gasAmountForLiquidation_,
       uint256 maxDebtFloor_,
       uint256 minDebtFloor_
-    ) public IncreasingTreasuryReimbursement(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
+    ) public IncreasingTreasuryReimbursementMock(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
         require(safeEngine_ != address(0), "SingleDebtFloorAdjuster/invalid-safe-engine");
         require(oracleRelayer_ != address(0), "SingleDebtFloorAdjuster/invalid-oracle-relayer");
         require(gasPriceOracle_ != address(0), "SingleDebtFloorAdjuster/invalid-gas-price-oracle");
@@ -138,7 +139,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
     function divide(uint256 x, uint256 y) internal pure returns (uint256 z) {
         require(y > 0, "SingleDebtFloorAdjuster/div-y-null");
         z = x / y;
-        require(z <= x, "SingleDebtFloorAdjuster/div-invalid");
+        assert(z <= x); //, "SingleDebtFloorAdjuster/div-invalid");
     }
 
     // --- Administration ---
@@ -232,7 +233,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
     * @notify Automatically recompute and set a new debt floor for the collateral type with collateralName
     * @param feeReceiver The address that will receive the reward for calling this function
     */
-    function recomputeCollateralDebtFloor(address feeReceiver) external {
+    function recomputeCollateralDebtFloor(address feeReceiver) public {
         // Check that the update time is not in the future
         require(lastUpdateTime < now, "SingleDebtFloorAdjuster/update-time-in-the-future");
         // Check delay between calls
@@ -265,7 +266,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
     * @notify View function meant to return the new and upcoming debt floor. It checks for min/max bounds for newly computed floors
     */
     function getNextCollateralFloor() public returns (uint256) {
-        (, , , uint256 debtCeiling) = safeEngine.collateralTypes(collateralName);
+        (, , , uint256 debtCeiling ,) = safeEngine.collateralTypes(collateralName);
         uint256 lowestPossibleFloor  = minimum(debtCeiling, minDebtFloor);
         uint256 highestPossibleFloor = minimum(debtCeiling, maxDebtFloor);
 
@@ -274,7 +275,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
         uint256 ethPrice = ethPriceOracle.read();
 
         // Calculate the denominated value of the new debt floor
-        uint256 debtFloorValue = divide(multiply(multiply(gasPrice, gasAmountForLiquidation), ethPrice), WAD);
+        uint256 debtFloorValue = divide(multiply(multiply(gasPrice, gasAmountForLiquidation), WAD), ethPrice);
 
         // Calculate the new debt floor in terms of system coins
         uint256 redemptionPrice     = oracleRelayer.redemptionPrice();

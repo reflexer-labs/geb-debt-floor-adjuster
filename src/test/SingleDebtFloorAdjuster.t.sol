@@ -449,6 +449,7 @@ contract SingleDebtFloorAdjusterTest is DSTest {
     }
 
     function test_recompute_collateral_debt_floor_min() public {
+        gasPriceOracle.setPrice(1);
         adjuster.modifyParameters("gasAmountForLiquidation", 1);
 
         adjuster.recomputeCollateralDebtFloor(address(0xfab));
@@ -466,7 +467,7 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         gasPriceOracle.setPrice(notNull(gasPrice % 1000000000000)); // up to 1000 gwei
         ethPriceOracle.setPrice(notNull(ethPrice % 10000 ether));   // up to 10k
         adjuster.modifyParameters("gasAmountForLiquidation", notNull(gasAmountForLiquidation % (block.gaslimit / 2))); // up to half block
-        oracleRelayer.modifyParameters("redemptionPrice", maximum(notNull(redemptionPrice % 100 * 10**27), 10**24)); // from 0.001 up to 100
+        oracleRelayer.modifyParameters("redemptionPrice", notNull(redemptionPrice % 10**33)); // up to 100k
 
         keeper.doRecomputeCollateralDebtFloor(address(keeper));
         (,,,, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
@@ -474,6 +475,8 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         assertEq(adjuster.lastUpdateTime(), now);
         assertTrue(debtFloor >= minDebtFloor);
         assertTrue(debtFloor <= maxDebtFloor);
+        emit log_named_uint("debtFloor", debtFloor);
+        emit log_named_uint("calculated", recalculateDebtFloor());
         assertEq(debtFloor, recalculateDebtFloor());
     }
 
@@ -499,12 +502,13 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         uint256 lowestPossibleFloor  = minimum(debtCeiling, adjuster.minDebtFloor());
         uint256 highestPossibleFloor = minimum(debtCeiling, adjuster.maxDebtFloor());
 
-        uint256 debtFloorValue = (gasPriceOracle.read() * adjuster.gasAmountForLiquidation() * 10**18) / ethPriceOracle.read();
-        uint256 systemCoinDebtFloor = (debtFloorValue * 10**27) / oracleRelayer.redemptionPrice() * 10**27;
+        uint256 debtFloorValue = (gasPriceOracle.read() * adjuster.gasAmountForLiquidation() * ethPriceOracle.read()) / 10**18; // in usd
+        uint256 systemCoinDebtFloor = (debtFloorValue * 10**27) / oracleRelayer.redemptionPrice() * 10**27;                     // in rai
 
         // Check boundaries
         if (systemCoinDebtFloor <= lowestPossibleFloor) return lowestPossibleFloor;
         else if (systemCoinDebtFloor >= highestPossibleFloor) return highestPossibleFloor;
+        else return systemCoinDebtFloor;
     }
 
     function notNull(uint val) internal returns (uint) {
