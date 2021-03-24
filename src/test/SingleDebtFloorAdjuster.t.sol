@@ -114,6 +114,7 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         safeEngine.modifyParameters(collateralName, "debtCeiling", debtCeiling);
         safeEngine.addAuthorization(address(adjuster));
         oracleRelayer.modifyParameters("redemptionPrice", 3.14 ether);
+        adjuster.modifyParameters("maxRewardIncreaseDelay", 5 hours);
     }
 
     function test_setup() public {
@@ -470,22 +471,43 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         oracleRelayer.modifyParameters("redemptionPrice", notNull(redemptionPrice % 10**33)); // up to 100k
 
         keeper.doRecomputeCollateralDebtFloor(address(keeper));
-        (,,,, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
+        recompute_assertions(false);
+    }
 
-        assertEq(adjuster.lastUpdateTime(), now);
-        assertTrue(debtFloor >= minDebtFloor);
-        assertTrue(debtFloor <= maxDebtFloor);
-        emit log_named_uint("debtFloor", debtFloor);
-        emit log_named_uint("calculated", recalculateDebtFloor());
-        assertEq(debtFloor, recalculateDebtFloor());
+    function test_recompute_overtime() public {
+        keeper.doRecomputeCollateralDebtFloor(address(keeper));
+        recompute_assertions(false);
+
+        hevm.warp(now + 1 hours);
+        keeper.doRecomputeCollateralDebtFloor(address(keeper));
+        recompute_assertions(false);
+
+        hevm.warp(now + 1 days);
+        keeper.doRecomputeCollateralDebtFloor(address(keeper));
+        recompute_assertions(false);
+
+        hevm.warp(now + 1 weeks);
+        keeper.doRecomputeCollateralDebtFloor(address(keeper));
+        recompute_assertions(false);
+
+        hevm.warp(now + 100 weeks);
+        keeper.doRecomputeCollateralDebtFloor(address(keeper));
+        recompute_assertions(false);
     }
 
     function test_manual_recompute() public {
         hevm.warp(now + 1);
         adjuster.manualRecomputeCollateralDebtFloor();
+        recompute_assertions(true);
+    }
+
+    function recompute_assertions(bool isManual) internal {
         (,,,, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
 
-        assertEq(adjuster.lastManualUpdateTime(), now);
+        if (isManual)
+            assertEq(adjuster.lastManualUpdateTime(), now);
+        else
+            assertEq(adjuster.lastUpdateTime(), now);
         assertTrue(debtFloor >= minDebtFloor);
         assertTrue(debtFloor <= maxDebtFloor);
         assertEq(debtFloor, recalculateDebtFloor());

@@ -23,15 +23,35 @@ contract OracleMock {
 }
 
 contract TokenMock {
-    uint256 public totalSupply = 1E24;
-    uint256 public burnedBalance;
+    uint constant maxUint = uint(0) - 1;
+    mapping (address => uint256) public received;
+    mapping (address => uint256) public sent;
 
-    function balanceOf(address) public returns (uint) {
-        return burnedBalance;
+    function totalSupply() public view returns (uint) {
+        return maxUint;
+    }
+    function balanceOf(address src) public view returns (uint) {
+        return maxUint;
+    }
+    function allowance(address src, address guy) public view returns (uint) {
+        return maxUint;
     }
 
-    function setParams(uint256 _totalSupply) public {
-        totalSupply = _totalSupply;
+    function transfer(address dst, uint wad) public returns (bool) {
+        return transferFrom(msg.sender, dst, wad);
+    }
+
+    function transferFrom(address src, address dst, uint wad)
+        public
+        returns (bool)
+    {
+        received[dst] += wad;
+        sent[src]     += wad;
+        return true;
+    }
+
+    function approve(address guy, uint wad) virtual public returns (bool) {
+        return true;
     }
 }
 
@@ -59,7 +79,25 @@ contract FuzzBounds is SingleDebtFloorAdjusterMock {
 
         safeEngine.modifyParameters(collateralName, "debtCeiling", 1000000 * 10**45);
         OracleRelayer(address (oracleRelayer)).modifyParameters("redemptionPrice", 3.14 ether);
+
+        maxRewardIncreaseDelay = 5 hours;
     }
+
+    function fuzzParams(uint ethPrice, uint gasPrice, uint _gasAmountForLiquidation, uint redemptionPrice) public {
+        OracleMock(address(ethPriceOracle)).setPrice(notNull(ethPrice % 1000 ether)); // up to 100k
+        OracleMock(address(gasPriceOracle)).setPrice(notNull(gasPrice % 10000000000000)); // up to 10000 gwei
+        gasAmountForLiquidation = notNull(_gasAmountForLiquidation % (block.gaslimit * 4)); // up to block.gaslimit * 4 (50mm)
+        OracleRelayer(address(oracleRelayer)).modifyParameters("redemptionPrice", maximum(redemptionPrice % 10**39, 10**24));
+    }
+
+    function notNull(uint val) internal returns (uint) {
+        return val == 0 ? 1 : val;
+    }
+
+    function maximum(uint a, uint b) internal returns (uint) {
+        return (b >= a) ? b : a;
+    }
+
 }
 
 // @notice Fuzz the contracts testing properties
@@ -87,9 +125,7 @@ contract Fuzz is SingleDebtFloorAdjusterMock {
         safeEngine.modifyParameters(collateralName, "debtCeiling", 1000000 * 10**45);
         OracleRelayer(address (oracleRelayer)).modifyParameters("redemptionPrice", 3.14 ether);
 
-        recomputeCollateralDebtFloor(address(0xfab));
-
-        maxRewardIncreaseDelay = 3600;
+        maxRewardIncreaseDelay = 5 hours;
     }
 
     modifier recompute() {
@@ -99,6 +135,10 @@ contract Fuzz is SingleDebtFloorAdjusterMock {
 
     function notNull(uint val) internal returns (uint) {
         return val == 0 ? 1 : val;
+    }
+
+    function maximum(uint a, uint b) internal returns (uint) {
+        return (b >= a) ? b : a;
     }
 
     function fuzzEthPrice(uint ethPrice) public recompute {
@@ -114,78 +154,17 @@ contract Fuzz is SingleDebtFloorAdjusterMock {
     }
 
     function fuzzRedemptionPrice(uint redemptionPrice) public recompute {
-        OracleRelayer(address(oracleRelayer)).modifyParameters("redemptionPrice", notNull(redemptionPrice % 10**39));
-    }
-
-    function recalculateDebtFloor() internal returns (uint) {
-        (, , , uint256 debtCeiling ,) = safeEngine.collateralTypes(collateralName);
-        uint256 lowestPossibleFloor  = minimum(debtCeiling, minDebtFloor);
-        uint256 highestPossibleFloor = minimum(debtCeiling, maxDebtFloor);
-
-        uint256 debtFloorValue = (gasPriceOracle.read() * gasAmountForLiquidation * ethPriceOracle.read()) / 10**18; // in usd
-        uint256 systemCoinDebtFloor = (debtFloorValue * 10**27) / oracleRelayer.redemptionPrice() * 10**27;          // in rai
-
-        // Check boundaries
-        if (systemCoinDebtFloor <= lowestPossibleFloor) return lowestPossibleFloor;
-        else if (systemCoinDebtFloor >= highestPossibleFloor) return highestPossibleFloor;
-        else return systemCoinDebtFloor;
+        OracleRelayer(address(oracleRelayer)).modifyParameters("redemptionPrice", maximum(redemptionPrice % 10**39, 10**24));
     }
 
     // properties
     function echidna_debt_floor() public returns (bool) {
         (,,,, uint256 debtFloor) = safeEngine.collateralTypes(collateralName);
-        return (debtFloor == recalculateDebtFloor());
+        return (debtFloor == getNextCollateralFloor() || lastUpdateTime == 0);
     }
 
     function echidna_debt_floor_bounds() public returns (bool) {
         (,,,, uint256 debtFloor) = safeEngine.collateralTypes(collateralName);
-        return (debtFloor >= minDebtFloor && debtFloor <= maxDebtFloor);
+        return (debtFloor >= minDebtFloor && debtFloor <= maxDebtFloor) || lastUpdateTime == 0;
     }
 }
-
-// // @notice Will create several different ThresholdSetters.
-// // goal is to fuzz minAmountToBurn and supplyPercentageToBurn
-// contract ExternalFuzz {
-//     ESMThresholdSetterMock setter;
-//     ESMMock esm;
-//     TokenMock token;
-
-//     uint256 lastUpdateTotalSupply;
-
-//     constructor() public  {
-//         token = new TokenMock();
-//         esm = new ESMMock(1E18);
-//         createNewSetter(1E18, 65);
-//     }
-
-//     function fuzzTotalSupply(uint256 totalSupply) public {
-//         token.setParams(totalSupply);
-//     }
-
-//     function createNewSetter(uint256 minAmountToBurn, uint256 supplyPercentageToBurn) public {
-//         setter = new ESMThresholdSetterMock(
-//             address(token),
-//             minAmountToBurn + 1,
-//             (supplyPercentageToBurn % 999) + 1 // ensuring valid setter params
-//         );
-//         setter.modifyParameters("esm", address(esm));
-//         recomputeThreshold();
-//     }
-
-//     function recomputeThreshold() public {
-//         lastUpdateTotalSupply = token.totalSupply();
-//         setter.recomputeThreshold();
-//     }
-
-//     // properties
-//     function echidna_threshold() public returns (bool) {
-//         uint threshold = esm.triggerThreshold();
-//         if (threshold < setter.minAmountToBurn()) return false;
-//         if (threshold == setter.minAmountToBurn()) return true;
-//         if (
-//              threshold != (lastUpdateTotalSupply * setter.supplyPercentageToBurn()) / 1000 // burned tokens are always 0
-//         ) return false;
-//         return true;
-//     }
-// }
-

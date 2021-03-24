@@ -34,30 +34,25 @@ Failures flag where overflows happen, and should be compared to expected inputs 
 Analyzing contract: /Users/fabio/Documents/reflexer/geb-debt-floor-adjuster/src/test/fuzz/SingleDebtFloorAdjusterFuzz.sol:FuzzBounds
 assertion in rmultiply: failed!💥
   Call sequence:
-    rmultiply(10,11878073311176165570034889156264605665638622269524920863125510254613159172896)
+    rmultiply(332921093094338577030744198535523240856704353483568126421802148408814269370,348)
 
 assertion in ray: failed!💥
   Call sequence:
-    ray(115908322801185052593715166036547792649176109893689552612609066156716)
+    ray(115812648077840646829345304368052060451846300843089180408138616160518)
 
 assertion in multiply: failed!💥
   Call sequence:
-    multiply(20284864702687109823681519207111366900,5963924741505427569128308457276696154022)
+    multiply(4165,27838755570577492995663440370365549945073429008406087208836364988134218004)
 
 assertion in baseUpdateCallerReward: passed! 🎉
 assertion in maxRewardIncreaseDelay: passed! 🎉
 assertion in authorizedAccounts: passed! 🎉
-assertion in recomputeCollateralDebtFloor: failed!💥
-  Call sequence:
-    recomputeCollateralDebtFloor(0x0) from: 0x0000000000000000000000000000000000010000
-    *wait* Time delay: 280147 seconds Block delay: 1
-    recomputeCollateralDebtFloor(0x0) from: 0x0000000000000000000000000000000000010000
-
+assertion in recomputeCollateralDebtFloor: passed! 🎉
 assertion in treasuryAllowance: passed! 🎉
 assertion in addAuthorization: passed! 🎉
 assertion in wmultiply: failed!💥
   Call sequence:
-    wmultiply(219352246868582790064461574595495495,531356677715175895590274009776977870524953)
+    wmultiply(203493213005984198459721542916147321788,575291077567137410960219008005515362524)
 
 assertion in subtract: failed!💥
   Call sequence:
@@ -66,12 +61,12 @@ assertion in subtract: failed!💥
 assertion in perSecondCallerRewardIncrease: passed! 🎉
 assertion in rad: failed!💥
   Call sequence:
-    rad(115890160058241162287579200047718654490303517348764)
+    rad(115795943725679882077277979345418798110609245556460)
 
 assertion in oracleRelayer: passed! 🎉
 assertion in addition: failed!💥
   Call sequence:
-    addition(65895742371972199160340240403652966719197523371016570500714154000763269119724,51663453205179106736573770082721497311695667380448256191190573288590875950039)
+    addition(58681716500677413755800075851094420641776907601571323736916992931906599422584,57213209650390704597336471413886422947431147611184191737496348348345682319906)
 
 assertion in RAY: passed! 🎉
 assertion in updateDelay: passed! 🎉
@@ -88,7 +83,7 @@ assertion in collateralName: passed! 🎉
 assertion in getNextCollateralFloor: passed! 🎉
 assertion in rdivide: failed!💥
   Call sequence:
-    rdivide(115899769392952946130453507072213386193783104893275,70030232432027941987360487978592051105915793)
+    rdivide(0,0)
 
 assertion in manualRecomputeCollateralDebtFloor: passed! 🎉
 assertion in ethPriceOracle: passed! 🎉
@@ -98,26 +93,21 @@ assertion in lastUpdateTime: passed! 🎉
 assertion in manualSetters: passed! 🎉
 assertion in rpower: failed!💥
   Call sequence:
-    rpower(340953406973632187442259559251142076810,3249852374806480520605965920319,0)
+    rpower(137490,15,1)
 
 assertion in minimum: passed! 🎉
 assertion in gasAmountForLiquidation: passed! 🎉
 assertion in removeManualSetter: passed! 🎉
-assertion in getCallerReward: failed!💥
-  Call sequence:
-    getCallerReward(1,0)
-
+assertion in getCallerReward: passed! 🎉
 assertion in wdivide: failed!💥
   Call sequence:
-    wdivide(116115775748065387252487754879519715091961438764866907725486,464954351996555578179881381232514158042794710343567147038)
+    wdivide(115865900777289161980450011454377227429765625273902118131960,594930460211338354869264009965854726534657655809423260)
 
 assertion in modifyParameters: passed! 🎉
 
-Seed: -7196134968007201111
+Seed: 8895570422632348356
 ```
-TBD
-
-#### Conclusion: TBD
+#### Conclusion: No exceptions found, all overflows are expected (from teh public functions in GebMath). A previous detailed analysis was also made for rPow, due to it's lower bound (geb repo, branch echidna).
 
 
 ### Fuzz Properties (Fuzz)
@@ -126,20 +116,19 @@ In this case we setup the setter, and check properties.
 
 Here we are not looking for bounds, but instead checking the properties that either should remain constant, or that move as the auction evolves:
 
-- debtFloor bunds and value
+- debtFloor bounds and value
 
 These properties are verified in between all calls.
 
 ```
 Analyzing contract: /Users/fabio/Documents/reflexer/geb-debt-floor-adjuster/src/test/fuzz/SingleDebtFloorAdjusterFuzz.sol:Fuzz
 echidna_debt_floor_bounds: passed! 🎉
-echidna_debt_floor: failed!💥
-  Call sequence:
-    *wait* Time delay: 1605 seconds Block delay: 3936435
-    fuzzGasAmountForLiquidation(0) from: 0x0000000000000000000000000000000000010000 Time delay: 2001 seconds Block delay: 30319291
+echidna_debt_floor: passed! 🎉
 
-
-Seed: 283288701020023378
+Seed: 8817236648426374032
 ```
 
-#### Conclusion: TBD
+#### Conclusion: No exceptions noted
+
+
+# Integration fuzz (fuzz both debt floor and ceiling adjusters)
