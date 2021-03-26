@@ -132,3 +132,34 @@ Seed: 8817236648426374032
 
 
 # Integration fuzz (fuzz both debt floor and ceiling adjusters)
+In this case, we are deploying both a debt floor adjuter and a debt ceiling setter.
+
+We fuzz all the parameters for both of the setters:
+- Eth price up to 1mm USD
+- Gas price up to 10k gwei
+- gasAmountForLiquidation up to the block gas limit
+- Redemption price from 0.001 to 1t
+- Debt amount up to 10t
+- accumulatedRate up to 1000x
+
+Properties checked:
+- debt floor (in SAFEEngine) matches the correct debt floor
+- debt floor bounds
+- debt floor is equal or lower than the debt ceiling
+- debt ceiling (in SAFEEngine) matches the correct debt ceiling
+- debt ceiling bounds
+
+These properties are verified in between all calls.
+
+```
+Analyzing contract: /Users/fabio/Documents/reflexer/geb-debt-floor-adjuster/src/test/fuzz/SingleDebtFloorAdjusterFuzz.sol:IntegrationFuzz
+echidna_debt_floor_lower_than_debt_ceiling: passed! 🎉
+echidna_debt_ceiling_bounds: passed! 🎉
+echidna_debt_floor_bounds: passed! 🎉
+echidna_debt_floor: passed! 🎉
+echidna_debt_ceiling: passed! 🎉
+
+Seed: 2730218574612219821
+```
+
+#### Conclusion: No exceptions noted
