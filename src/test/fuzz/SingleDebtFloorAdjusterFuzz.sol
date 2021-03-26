@@ -201,13 +201,12 @@ contract IntegrationFuzz {
     uint gasAmountForLiquidation         = 6000000;
     uint maxDebtFloor                    = 1000    * 10**45; // 1k
     uint minDebtFloor                    = 100     * 10**45; // 100
-    uint debtCeiling                     = 1000000 * 10**45; // 1m
+    uint debtCeiling                     = 10000   * 10**45; // 10k
     uint debtFloor                       = 800     * 10**45;
 
     SingleSpotDebtCeilingSetterMock ceilingSetter;
-
     uint256 ceilingPercentageChange      = 120;
-    uint256 maxCollateralCeiling         = 1000    * 10**45; // 1k
+    uint256 maxCollateralCeiling         = 10000   * 10**45; // 10k
     uint256 minCollateralCeiling         = 1       * 10**45; // 1
 
     constructor() public {
@@ -261,59 +260,67 @@ contract IntegrationFuzz {
         ceilingSetter.modifyParameters("maxRewardIncreaseDelay", 5 hours);
     }
 
-    modifier recompute() {
-        _;
-        floorAdjuster.recomputeCollateralDebtFloor(address(0xfab));
-        // ceilingSetter.autoUpdateCeiling(address(0xfab));
-    }
-
     function notNull(uint val) internal returns (uint) {
         return val == 0 ? 1 : val;
     }
 
-    function maximum(uint a, uint b) internal returns (uint) {
-        return (b >= a) ? b : a;
+    function minimum(uint x, uint y) internal pure returns (uint z) {
+        z = (x <= y) ? x : y;
     }
 
-    function fuzzEthPrice(uint ethPrice) public recompute {
-        OracleMock(address(ethPriceOracle)).setPrice(notNull(ethPrice % 1000 ether)); // up to 100k
+    function maximum(uint x, uint y) internal pure returns (uint z) {
+        z = (x >= y) ? x : y;
     }
 
-    function fuzzGasPrice(uint gasPrice) public recompute {
+    function fuzzEthPrice(uint ethPrice) public {
+        OracleMock(address(ethPriceOracle)).setPrice(notNull(ethPrice % 1000000 ether)); // up to 1mm
+    }
+
+    function fuzzGasPrice(uint gasPrice) public {
         OracleMock(address(gasPriceOracle)).setPrice(notNull(gasPrice % 10000000000000)); // up to 10000 gwei
     }
 
-    function fuzzGasAmountForLiquidation(uint gasAmountForLiquidation) public recompute {
+    function fuzzGasAmountForLiquidation(uint gasAmountForLiquidation) public {
         floorAdjuster.modifyParameters("gasAmountForLiquidation", notNull(gasAmountForLiquidation % block.gaslimit)); // up to block gas limit
     }
 
-    function fuzzRedemptionPrice(uint redemptionPrice) public recompute {
-        OracleRelayer(address(oracleRelayer)).modifyParameters("redemptionPrice", maximum(redemptionPrice % 10**39, 10**24));
+    function fuzzRedemptionPrice(uint redemptionPrice) public {
+        OracleRelayer(address(oracleRelayer)).modifyParameters("redemptionPrice", maximum(redemptionPrice % 10**39, 10**24)); // from 0.001 to 1t
     }
 
-    function fuzzDebtAmount(uint debtAmount) public recompute {
-        safeEngine.modifyFuzzParameters(collateralName, "debtAmount", debtAmount);
+    function fuzzDebtAmount(uint debtAmount) public {
+        safeEngine.modifyFuzzParameters(collateralName, "debtAmount", debtAmount % 10000000000000 * 10**18); // up to 10t coin
     }
 
-    function fuzzAccumulatedRate(uint accumulatedRate) public recompute {
-        safeEngine.modifyFuzzParameters(collateralName, "accumulatedRate", accumulatedRate);
+    function fuzzAccumulatedRate(uint accumulatedRate) public {
+        safeEngine.modifyFuzzParameters(collateralName, "accumulatedRate", accumulatedRate % 10**30); // up to 1000x
     }
 
     // properties
     function echidna_debt_floor() public returns (bool) {
+        floorAdjuster.recomputeCollateralDebtFloor(address(0xfab));
         (,,,, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
-        return (debtFloor == floorAdjuster.getNextCollateralFloor() || floorAdjuster.lastUpdateTime() == 0);
+        return (debtFloor == floorAdjuster.getNextCollateralFloor());
     }
 
     function echidna_debt_floor_bounds() public returns (bool) {
         (,,,, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
-        return (debtFloor >= floorAdjuster.minDebtFloor() && debtFloor <= floorAdjuster.maxDebtFloor()) || floorAdjuster.lastUpdateTime() == 0;
+        return (debtFloor >= floorAdjuster.minDebtFloor() && debtFloor <= floorAdjuster.maxDebtFloor());
     }
 
     function echidna_debt_floor_lower_than_debt_ceiling() public returns (bool) {
         (,,, uint256 debtCeiling, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
-        return (debtCeiling > debtFloor);
+        return (debtCeiling >= debtFloor);
     }
 
-    // (uint256 debtAmount, uint256 accumulatedRate,, uint256 currentDebtCeiling, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
+    function echidna_debt_ceiling() public returns (bool) {
+        ceilingSetter.autoUpdateCeiling(address(0xfab));
+        (,,,uint256 debtCeiling ,,) = safeEngine.collateralTypes(collateralName);
+        return (debtCeiling == ceilingSetter.getNextCollateralCeiling());
+    }
+
+    function echidna_debt_ceiling_bounds() public returns (bool) {
+        (,,,uint256 debtCeiling ,,) = safeEngine.collateralTypes(collateralName);
+        return (debtCeiling >= ceilingSetter.minCollateralCeiling() && debtCeiling <= ceilingSetter.maxCollateralCeiling());
+    }
 }
