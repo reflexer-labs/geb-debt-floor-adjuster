@@ -274,7 +274,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
         uint256 ethPrice = ethPriceOracle.read();
 
         // Calculate the denominated value of the new debt floor
-        uint256 debtFloorValue = divide(multiply(multiply(gasPrice, gasAmountForLiquidation), WAD), ethPrice);
+        uint256 debtFloorValue = divide(multiply(multiply(gasPrice, gasAmountForLiquidation), ethPrice), WAD);
 
         // Calculate the new debt floor in terms of system coins
         uint256 redemptionPrice     = oracleRelayer.redemptionPrice();
