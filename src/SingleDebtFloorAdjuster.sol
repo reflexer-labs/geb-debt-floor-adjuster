@@ -56,15 +56,19 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
     // Gas amount needed to liquidate a Safe backed by the collateral type with the collateralName
     uint256 public gasAmountForLiquidation;
     // The max value for the debt floor
-    uint256 public maxDebtFloor;                    // [rad]
+    uint256 public maxDebtFloor;                         // [rad]
     // The min amount of system coins that must be generated using this collateral type
-    uint256 public minDebtFloor;                    // [rad]
+    uint256 public minDebtFloor;                         // [rad]
+    // Max expected 1h deviation, to ensure bids are profitable in a scenario price of collateral is severely devaluing
+    uint256 public max1hPriceDeviation = 0.2e18;         // [wad], default 20%
+    // Liquidation Ratio of Collateral
+    uint256 public collateralLiquidationRatio = 1.35e27; // [rad], default 135%
     // When the debt floor was last updated
-    uint256 public lastUpdateTime;                  // [timestamp]
+    uint256 public lastUpdateTime;                       // [timestamp]
     // Enforced gap between calls
-    uint256 public updateDelay;                     // [seconds]
+    uint256 public updateDelay;                          // [seconds]
     // Last timestamp of a manual update
-    uint256 public lastManualUpdateTime;            // [seconds]
+    uint256 public lastManualUpdateTime;                 // [seconds]
 
     // The SAFEEngine contract
     SAFEEngineLike    public safeEngine;
@@ -135,6 +139,7 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
     }
 
     // --- Math ---
+    uint256 internal constant RAD = 10**45;
     function divide(uint256 x, uint256 y) internal pure returns (uint256 z) {
         require(y > 0, "SingleDebtFloorAdjuster/div-y-null");
         z = x / y;
@@ -209,6 +214,14 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
           require(both(val > 0, val < block.gaslimit), "SingleDebtFloorAdjuster/invalid-liq-gas-amount");
           gasAmountForLiquidation = val;
         }
+        else if (parameter == "max1hPriceDeviation") {
+          require(val <= WAD, "SingleDebtFloorAdjuster/invalid-max-price-deviation");
+          max1hPriceDeviation = val;
+        }
+        else if (parameter == "collateralLiquidationRatio") {
+          require(val > RAY, "SingleDebtFloorAdjuster/invalid-collateral-liquidation-ratio");
+          collateralLiquidationRatio = val;
+        }
         else revert("SingleDebtFloorAdjuster/modify-unrecognized-param");
         emit ModifyParameters(
           parameter,
@@ -274,16 +287,17 @@ contract SingleDebtFloorAdjuster is IncreasingTreasuryReimbursement {
         uint256 ethPrice = ethPriceOracle.read();
 
         // Calculate the denominated value of the new debt floor
-        uint256 debtFloorValue = divide(multiply(multiply(gasPrice, gasAmountForLiquidation), ethPrice), WAD);
+        uint256 liquidationCostUSD = divide(multiply(multiply(gasPrice, gasAmountForLiquidation), ethPrice), WAD);
 
         // Calculate the new debt floor in terms of system coins
         uint256 redemptionPrice     = oracleRelayer.redemptionPrice();
-        uint256 systemCoinDebtFloor = multiply(divide(multiply(debtFloorValue, RAY), redemptionPrice), RAY);
+        uint256 liquidationCostRAI  = multiply(divide(multiply(liquidationCostUSD, RAY), redemptionPrice), RAY);
+
+        uint systemCoinDebtFloor = multiply(divide(liquidationCostRAI, subtract(multiply(collateralLiquidationRatio, subtract(WAD, max1hPriceDeviation)), RAD)), RAD);
 
         // Check boundaries
         if (systemCoinDebtFloor <= lowestPossibleFloor) return lowestPossibleFloor;
         else if (systemCoinDebtFloor >= highestPossibleFloor) return highestPossibleFloor;
-
         return systemCoinDebtFloor;
     }
 }

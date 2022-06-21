@@ -391,6 +391,12 @@ contract SingleDebtFloorAdjusterTest is DSTest {
 
         adjuster.modifyParameters("gasAmountForLiquidation", 1);
         assertEq(adjuster.gasAmountForLiquidation(), 1);
+
+        adjuster.modifyParameters("max1hPriceDeviation", 10**18);
+        assertEq(adjuster.max1hPriceDeviation(), 10**18);
+
+        adjuster.modifyParameters("collateralLiquidationRatio", 1.1e27);
+        assertEq(adjuster.collateralLiquidationRatio(), 1.1e27);
     }
 
     function testFail_modify_parameters_uint_unrecognized() public {
@@ -442,7 +448,16 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         adjuster.modifyParameters("gasAmountForLiquidation", 0);
     }
 
+    function testFail_modify_parameters_uint_invalid_max_price_deviation() public {
+        adjuster.modifyParameters("max1hPriceDeviation", 1 + 10**18);
+    }
+
+    function testFail_modify_parameters_uint_invalid_liquidation_ratio() public {
+        adjuster.modifyParameters("max1hPriceDeviation", 10**27 - 1);
+    }
+
     function test_recompute_collateral_debt_floor_max() public {
+        gasPriceOracle.setPrice(1e27);
         adjuster.recomputeCollateralDebtFloor(address(0xfab));
         (,,,, uint256 debtFloor,) = safeEngine.collateralTypes(collateralName);
         assertEq(adjuster.lastUpdateTime(), now);
@@ -465,10 +480,10 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         uint gasAmountForLiquidation,
         uint redemptionPrice
     ) public {
-        gasPriceOracle.setPrice(notNull(gasPrice % 1000000000000)); // up to 1000 gwei
+        gasPriceOracle.setPrice(notNull(gasPrice % 1000000000000));     // up to 1000 gwei
         ethPriceOracle.setPrice(notNull(ethPrice % 10000 ether));   // up to 10k
-        adjuster.modifyParameters("gasAmountForLiquidation", notNull(gasAmountForLiquidation % (block.gaslimit / 2))); // up to half block
-        oracleRelayer.modifyParameters("redemptionPrice", notNull(redemptionPrice % 10**33)); // up to 100k
+        adjuster.modifyParameters("gasAmountForLiquidation", notNull(gasAmountForLiquidation % 10**6)); // up to 1mm
+        oracleRelayer.modifyParameters("redemptionPrice", notNull(redemptionPrice % 10**30)); // up to 100
 
         keeper.doRecomputeCollateralDebtFloor(address(keeper));
         recompute_assertions(false);
@@ -524,13 +539,15 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         uint256 lowestPossibleFloor  = minimum(debtCeiling, adjuster.minDebtFloor());
         uint256 highestPossibleFloor = minimum(debtCeiling, adjuster.maxDebtFloor());
 
-        uint256 debtFloorValue = (gasPriceOracle.read() * adjuster.gasAmountForLiquidation() * ethPriceOracle.read()) / 10**18; // in usd
-        uint256 systemCoinDebtFloor = (debtFloorValue * 10**27) / oracleRelayer.redemptionPrice() * 10**27;                     // in rai
+        uint256 liquidationCostUSD = (gasPriceOracle.read() * adjuster.gasAmountForLiquidation() * ethPriceOracle.read()) / 10**18; // in usd
+        uint256 liquidationCostRAI = (liquidationCostUSD * 10**27) / oracleRelayer.redemptionPrice() * 10**27;                      // in rai
+
+        uint systemCoinDebtFloor = (liquidationCostRAI / ((adjuster.collateralLiquidationRatio() * (10**18 - adjuster.max1hPriceDeviation())) - 10**45)) * 10**45;
 
         // Check boundaries
         if (systemCoinDebtFloor <= lowestPossibleFloor) return lowestPossibleFloor;
         else if (systemCoinDebtFloor >= highestPossibleFloor) return highestPossibleFloor;
-        else return systemCoinDebtFloor;
+        return systemCoinDebtFloor;
     }
 
     function notNull(uint val) internal returns (uint) {
