@@ -4,7 +4,7 @@ import "ds-test/test.sol";
 import "ds-token/token.sol";
 import {SAFEEngine} from "geb/SAFEEngine.sol";
 import {OracleRelayer} from "geb/OracleRelayer.sol";
-import "./Mock/MockTreasury.sol";
+import "./mock/MockTreasury.sol";
 
 import {SingleDebtFloorAdjuster} from "../SingleDebtFloorAdjuster.sol";
 
