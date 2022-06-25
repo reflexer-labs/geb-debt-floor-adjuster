@@ -71,16 +71,20 @@ contract SingleDebtFloorAdjusterTest is DSTest {
     SingleDebtFloorAdjuster adjuster;
     Keeper keeper;
 
-    bytes32 collateralName = "ETH";
-    uint baseUpdateCallerReward          = 5 ether;
-    uint maxUpdateCallerReward           = 10 ether;
-    uint perSecondCallerRewardIncrease   = 1000192559420674483977255848; // 100% per hour;
-    uint updateDelay                     = 1 hours;
-    uint maxRewardIncreaseDelay          = 6 hours;
-    uint gasAmountForLiquidation         = 6000000;
-    uint maxDebtFloor                    = 1000    * 10**45; // 1k
-    uint minDebtFloor                    = 100     * 10**45; // 100
-    uint debtCeiling                     = 1000000 * 10**45; // 1m
+    bytes32 constant collateralName = "ETH";
+    uint constant baseUpdateCallerReward          = 5 ether;
+    uint constant maxUpdateCallerReward           = 10 ether;
+    uint constant perSecondCallerRewardIncrease   = 1000192559420674483977255848; // 100% per hour;
+    uint constant updateDelay                     = 1 hours;
+    uint constant maxRewardIncreaseDelay          = 6 hours;
+    uint constant gasAmountForLiquidation         = 6000000;
+    uint constant maxDebtFloor                    = 1000    * RAD; // 1k
+    uint constant minDebtFloor                    = 100     * RAD; // 100
+    uint constant debtCeiling                     = 1000000 * RAD; // 1m
+
+    uint constant WAD                             = 10**18;
+    uint constant RAY                             = 10**27;
+    uint constant RAD                             = 10**45;
 
     function setUp() public {
         hevm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -91,7 +95,7 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         oracleRelayer = new OracleRelayer(address(safeEngine));
         treasury = new MockTreasury(address(token));
         gasPriceOracle = new OracleMock(120000000000);  // 120 gwei
-        ethPriceOracle = new OracleMock(5000 * 10**18); // 5k
+        ethPriceOracle = new OracleMock(5000 * WAD); // 5k
 
         adjuster = new SingleDebtFloorAdjuster(
             address(safeEngine),
@@ -113,7 +117,7 @@ contract SingleDebtFloorAdjusterTest is DSTest {
 
         safeEngine.modifyParameters(collateralName, "debtCeiling", debtCeiling);
         safeEngine.addAuthorization(address(adjuster));
-        oracleRelayer.modifyParameters("redemptionPrice", 3.14 ether);
+        oracleRelayer.modifyParameters("redemptionPrice", 3.14 * 10**27);
         adjuster.modifyParameters("maxRewardIncreaseDelay", 5 hours);
     }
 
@@ -371,8 +375,8 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         adjuster.modifyParameters("maxUpdateCallerReward", 8 ether);
         assertEq(adjuster.maxUpdateCallerReward(), 8 ether);
 
-        adjuster.modifyParameters("perSecondCallerRewardIncrease", 10**27);
-        assertEq(adjuster.perSecondCallerRewardIncrease(), 10**27);
+        adjuster.modifyParameters("perSecondCallerRewardIncrease", RAY);
+        assertEq(adjuster.perSecondCallerRewardIncrease(), RAY);
 
         adjuster.modifyParameters("maxRewardIncreaseDelay", 1);
         assertEq(adjuster.maxRewardIncreaseDelay(), 1);
@@ -392,11 +396,11 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         adjuster.modifyParameters("gasAmountForLiquidation", 1);
         assertEq(adjuster.gasAmountForLiquidation(), 1);
 
-        adjuster.modifyParameters("max1hPriceDeviation", 10**18);
-        assertEq(adjuster.max1hPriceDeviation(), 10**18);
+        adjuster.modifyParameters("maxPriceDeviation", 1.2e27);
+        assertEq(adjuster.maxPriceDeviation(), 1.2e27);
 
-        adjuster.modifyParameters("collateralLiquidationRatio", 1.1e27);
-        assertEq(adjuster.collateralLiquidationRatio(), 1.1e27);
+        adjuster.modifyParameters("auctionDiscount", 80000000000000000);
+        assertEq(adjuster.auctionDiscount(), 80000000000000000);
     }
 
     function testFail_modify_parameters_uint_unrecognized() public {
@@ -417,7 +421,7 @@ contract SingleDebtFloorAdjusterTest is DSTest {
     }
 
     function testFail_modify_parameters_uint_invalid_per_second_reward_increase() public {
-        adjuster.modifyParameters("perSecondCallerRewardIncrease", 10**27 - 1);
+        adjuster.modifyParameters("perSecondCallerRewardIncrease", RAY - 1);
     }
 
     function testFail_modify_parameters_uint_invalid_max_reward_increase_delay() public {
@@ -449,11 +453,11 @@ contract SingleDebtFloorAdjusterTest is DSTest {
     }
 
     function testFail_modify_parameters_uint_invalid_max_price_deviation() public {
-        adjuster.modifyParameters("max1hPriceDeviation", 1 + 10**18);
+        adjuster.modifyParameters("maxPriceDeviation", RAY - 1);
     }
 
-    function testFail_modify_parameters_uint_invalid_liquidation_ratio() public {
-        adjuster.modifyParameters("max1hPriceDeviation", 10**27 - 1);
+    function testFail_modify_parameters_uint_invalid_auction_discount() public {
+        adjuster.modifyParameters("auctionDiscount", WAD + 1);
     }
 
     function test_recompute_collateral_debt_floor_max() public {
@@ -480,10 +484,10 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         uint gasAmountForLiquidation,
         uint redemptionPrice
     ) public {
-        gasPriceOracle.setPrice(notNull(gasPrice % 1000000000000));     // up to 1000 gwei
-        ethPriceOracle.setPrice(notNull(ethPrice % 10000 ether));   // up to 10k
-        adjuster.modifyParameters("gasAmountForLiquidation", notNull(gasAmountForLiquidation % 10**6)); // up to 1mm
-        oracleRelayer.modifyParameters("redemptionPrice", notNull(redemptionPrice % 10**30)); // up to 100
+        gasPriceOracle.setPrice(notNull(gasPrice % 1e13)); // up to 10k gwei
+        ethPriceOracle.setPrice(notNull(ethPrice % 1e7 ether)); // up to 10mm
+        adjuster.modifyParameters("gasAmountForLiquidation", notNull(gasAmountForLiquidation % 10**7)); // up to 10mm
+        oracleRelayer.modifyParameters("redemptionPrice", maximum(10**9, redemptionPrice % 10**31)); // from dust up to 1k, 10**9 is the lower bound of redemptionPrice (WAD, 10**18 in RAY)
 
         keeper.doRecomputeCollateralDebtFloor(address(keeper));
         recompute_assertions(false);
@@ -539,14 +543,14 @@ contract SingleDebtFloorAdjusterTest is DSTest {
         uint256 lowestPossibleFloor  = minimum(debtCeiling, adjuster.minDebtFloor());
         uint256 highestPossibleFloor = minimum(debtCeiling, adjuster.maxDebtFloor());
 
-        uint256 liquidationCostUSD = (gasPriceOracle.read() * adjuster.gasAmountForLiquidation() * ethPriceOracle.read()) / 10**18; // in usd
-        uint256 liquidationCostRAI = (liquidationCostUSD * 10**27) / oracleRelayer.redemptionPrice() * 10**27;                      // in rai
+        uint256 liquidationCostUSD = ethPriceOracle.read() * gasPriceOracle.read() / WAD * adjuster.gasAmountForLiquidation(); // in USD WAD
+        uint256 liquidationCostRAI = liquidationCostUSD * WAD / (oracleRelayer.redemptionPrice() / 10**9);                     // in RAI WAD
 
-        uint systemCoinDebtFloor = (liquidationCostRAI / ((adjuster.collateralLiquidationRatio() * (10**18 - adjuster.max1hPriceDeviation())) - 10**45)) * 10**45;
+        uint256 systemCoinDebtFloor = liquidationCostRAI * WAD / adjuster.auctionDiscount() * adjuster.maxPriceDeviation();    // RAI, RAD
 
         // Check boundaries
         if (systemCoinDebtFloor <= lowestPossibleFloor) return lowestPossibleFloor;
-        else if (systemCoinDebtFloor >= highestPossibleFloor) return highestPossibleFloor;
+        if (systemCoinDebtFloor >= highestPossibleFloor) return highestPossibleFloor;
         return systemCoinDebtFloor;
     }
 
